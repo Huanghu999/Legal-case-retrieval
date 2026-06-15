@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this benchmark, please cite it as below."
+title: "CaseLaw-Bench: A Graded-Relevance Benchmark for Chinese Civil/Commercial Similar-Case Retrieval (Phase 1: Sales Contracts, Shanghai)"
+abstract: >-
+  民商事类案检索的分级相关性标准答案集。Phase 1 = 买卖合同纠纷(上海),
+  58 条自然语言问句 × 751 篇案件,LLM 双判官集成(deepseek-chat × deepseek-v4-pro)
+  pointwise 标注,grade 0–3。基于最高法《指导意见》三要素 + 三步法。
+type: dataset
+version: "1.0.0"
+date-released: "2026-06-11"
+authors:
+  - name: "<作者姓名 / 机构 — 请填写>"   # TODO: 替换为作者信息
+keywords:
+  - legal case retrieval
+  - 类案检索
+  - graded relevance
+  - benchmark
+  - Chinese law
+  - civil and commercial law
+license: "CC-BY-NC-SA-4.0"   # 待作者确认,见 LICENSE

@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>法律类案召回台</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='legal_rag.css') }}">
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="hero-kicker">Case Retrieval Workbench</p>
+          <h1>法律类案召回台</h1>
+          <p class="hero-subtitle">
+            把你现在这套 OpenSearch + BGE embedding + SiliconFlow rerank
+            检索链放进一个可交互的工作台里，方便做 query 调试、证据查看和原文回溯。
+          </p>
+        </div>
+        <div class="hero-metrics" id="health-panel">
+          <div class="metric-card">
+            <span class="metric-label">OpenSearch</span>
+            <strong id="health-opensearch">检查中</strong>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">SiliconFlow</span>
+            <strong id="health-siliconflow">检查中</strong>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">默认模式</span>
+            <strong id="health-mode">Hybrid + Rerank</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="main-grid">
+        <section class="search-panel">
+          <form id="search-form" class="search-form">
+            <label class="field-group field-group-large">
+              <span class="field-label">检索问题</span>
+              <textarea
+                id="query"
+                name="query"
+                rows="5"
+                placeholder="例如：委托合同未完成事务要求返还委托款和资金占用利息"
+              ></textarea>
+            </label>
+
+            <div class="example-row">
+              <button type="button" class="example-chip" data-query="委托合同未完成事务要求返还委托款和资金占用利息">委托款返还</button>
+              <button type="button" class="example-chip" data-query="房屋租赁合同解除后押金返还和违约金如何处理">租赁押金</button>
+              <button type="button" class="example-chip" data-query="建设工程未按约完工要求支付工程款和逾期利息">工程款争议</button>
+            </div>
+
+            <div class="control-grid">
+              <label class="field-group">
+                <span class="field-label">召回模式</span>
+                <select id="mode" name="mode">
+                  <option value="bm25">BM25</option>
+                  <option value="vector">Vector</option>
+                  <option value="hybrid">Hybrid</option>
+                </select>
+              </label>
+
+              <div class="field-group checkbox-group">
+                <span class="field-label">精排</span>
+                <label class="toggle">
+                  <input type="checkbox" id="rerank" name="rerank" checked>
+                  <span class="toggle-track"></span>
+                  <span class="toggle-text">启用 BGE Reranker</span>
+                </label>
+              </div>
+
+              <label class="field-group">
+                <span class="field-label">案件数</span>
+                <input id="top_k" name="top_k" type="number" min="1" max="20" value="8">
+              </label>
+
+              <label class="field-group">
+                <span class="field-label">证据块数</span>
+                <input id="chunk_top_k" name="chunk_top_k" type="number" min="1" max="5" value="3">
+              </label>
+
+              <label class="field-group">
+                <span class="field-label">召回候选</span>
+                <input id="candidate_size" name="candidate_size" type="number" min="10" max="300" value="80">
+              </label>
+
+              <label class="field-group">
+                <span class="field-label">Rerank TopN</span>
+                <input id="rerank_top_n" name="rerank_top_n" type="number" min="1" max="200" value="30">
+              </label>
+
+              <label class="field-group">
+                <span class="field-label">Rerank 融合权重</span>
+                <input id="rerank_model_weight" name="rerank_model_weight" type="number" min="0" max="1" step="0.05" value="0.25">
+              </label>
+            </div>
+
+            <details class="advanced-panel">
+              <summary>高级筛选与回溯配置</summary>
+              <div class="advanced-grid">
+                <label class="field-group">
+                  <span class="field-label">案由</span>
+                  <input id="reason" name="reason" type="text" placeholder="例如：委托合同纠纷">
+                </label>
+
+                <label class="field-group">
+                  <span class="field-label">审级</span>
+                  <input id="trial_level" name="trial_level" type="text" placeholder="例如：一审">
+                </label>
+
+                <label class="field-group">
+                  <span class="field-label">法院</span>
+                  <input id="court_name" name="court_name" type="text" placeholder="例如：上海市浦东新区人民法院">
+                </label>
+
+                <label class="field-group">
+                  <span class="field-label">章节</span>
+                  <input id="section_type" name="section_type" type="text" placeholder="例如：reasoning">
+                </label>
+
+                <label class="field-group">
+                  <span class="field-label">裁判日期起</span>
+                  <input id="judge_date_from" name="judge_date_from" type="date">
+                </label>
+
+                <label class="field-group">
+                  <span class="field-label">裁判日期止</span>
+                  <input id="judge_date_to" name="judge_date_to" type="date">
+                </label>
+
+                <label class="field-group">
+                  <span class="field-label">上下文窗口</span>
+                  <input id="context_window" name="context_window" type="number" min="50" max="600" value="180">
+                </label>
+
+                <label class="field-group checkbox-inline">
+                  <input id="show_context" name="show_context" type="checkbox" checked>
+                  <span>返回命中上下文</span>
+                </label>
+              </div>
+            </details>
+
+            <div class="action-row">
+              <button type="submit" id="search-button" class="primary-action">开始检索</button>
+              <span class="inline-tip">默认会调用现有的 hybrid 召回和 SiliconFlow rerank</span>
+            </div>
+          </form>
+        </section>
+
+        <section class="results-panel">
+          <div class="results-header">
+            <div>
+              <p class="results-kicker">Search Results</p>
+              <h2>候选类案</h2>
+            </div>
+            <div class="results-meta" id="results-meta">
+              等待查询
+            </div>
+          </div>
+
+          <div id="status-banner" class="status-banner idle">
+            输入一个法律问题，系统会返回案件卡片、命中 chunk 和可回溯的原文证据。
+          </div>
+
+          <div id="results-list" class="results-list">
+            <div class="empty-state">
+              <h3>检索结果会显示在这里</h3>
+              <p>建议从口语化事实描述开始，然后逐步叠加案由、审级或日期过滤做调试。</p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <section class="benchmark-panel">
+        <div class="benchmark-header">
+          <div>
+            <p class="results-kicker">Benchmark Evaluation</p>
+            <h2>标注集召回评估</h2>
+          </div>
+          <div class="benchmark-actions">
+            <label class="mini-field">
+              <span>查询数</span>
+              <input id="benchmark-limit" type="number" min="1" max="58" value="58">
+            </label>
+            <label class="mini-field">
+              <span>TopK</span>
+              <input id="benchmark-top-k" type="number" min="5" max="100" value="100">
+            </label>
+            <button type="button" id="benchmark-button" class="primary-action">运行评估</button>
+          </div>
+        </div>
+
+        <div class="benchmark-tuning">
+          <label class="mini-field">
+            <span>候选数</span>
+            <input id="benchmark-candidate-size" type="number" min="20" max="300" value="300">
+          </label>
+          <label class="mini-field">
+            <span>Rerank TopN</span>
+            <input id="benchmark-rerank-top-n" type="number" min="1" max="150" value="100">
+          </label>
+          <label class="mini-field">
+            <span>Rerank权重</span>
+            <input id="benchmark-rerank-model-weight" type="number" min="0" max="1" step="0.05" value="0.25">
+          </label>
+          <label class="mini-field">
+            <span>Rank-safe</span>
+            <select id="benchmark-rerank-rank-safe">
+              <option value="true" selected>开启</option>
+              <option value="false">关闭</option>
+            </select>
+          </label>
+          <label class="mini-field">
+            <span>最大上升名次</span>
+            <input id="benchmark-rerank-max-rank-promotion" type="number" min="0" max="100" value="30">
+          </label>
+          <label class="mini-field">
+            <span>限流间隔ms</span>
+            <input id="benchmark-rerank-min-interval-ms" type="number" min="0" max="10000" step="100" value="1200">
+          </label>
+          <label class="mini-field">
+            <span>重试次数</span>
+            <input id="benchmark-rerank-max-retries" type="number" min="0" max="8" value="3">
+          </label>
+        </div>
+
+        <div id="benchmark-status" class="status-banner idle">
+          使用当前页面的真实 hybrid / rerank 检索链路，对 queries.jsonl 逐条召回，并按 qrels.jsonl 计算指标。
+        </div>
+
+        <div id="benchmark-summary" class="benchmark-summary"></div>
+        <div id="benchmark-results" class="benchmark-results"></div>
+      </section>
+    </div>
+
+    <aside id="case-drawer" class="case-drawer" aria-hidden="true">
+      <div class="drawer-backdrop" data-close-drawer="true"></div>
+      <div class="drawer-panel">
+        <button class="drawer-close" type="button" data-close-drawer="true">关闭</button>
+        <div id="drawer-content" class="drawer-content"></div>
+      </div>
+    </aside>
+
+    <script>
+      window.LEGAL_RAG_DEFAULTS = {{ defaults|tojson }};
+    </script>
+    <script src="{{ url_for('static', filename='legal_rag.js') }}" defer></script>
+  </body>
+</html>
