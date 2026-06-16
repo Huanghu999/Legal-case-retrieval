@@ -35,13 +35,13 @@ ROUTE_NAMES = [
 
 BASE_WEIGHTS = {
     "bm25_raw": 1.0,
-    "vector_raw": 1.0,
+    "vector_raw": 0.80,
     "bm25_focus": 0.95,
-    "vector_focus": 1.10,
-    "bm25_fine_issue": 1.35,
-    "bm25_focus_section": 1.30,
+    "vector_focus": 1.20,
+    "bm25_fine_issue": 1.20,
+    "bm25_focus_section": 1.60,
     "bm25_reasoning": 1.10,
-    "bm25_facts": 0.90,
+    "bm25_facts": 0.60,
     "bm25_negative": 1.20,
     "bm25_legal": 0.80,
 }

@@ -320,25 +320,25 @@ def build_rerank_query(profile: QueryProfile) -> str:
 def build_query_routes(profile: QueryProfile) -> list[QueryRoute]:
     routes = [
         QueryRoute("bm25_raw", profile.raw_query, "bm25", 1.0),
-        QueryRoute("vector_raw", profile.raw_query, "vector", 1.0),
+        QueryRoute("vector_raw", profile.raw_query, "vector", 0.8),
     ]
     focus_query = build_focus_query(profile)
     if focus_query and focus_query != profile.raw_query:
         routes.append(QueryRoute("bm25_focus", focus_query, "bm25", 0.95))
-        routes.append(QueryRoute("vector_focus", focus_query, "vector", 1.10))
+        routes.append(QueryRoute("vector_focus", focus_query, "vector", 1.20))
     section_query = focus_query or profile.raw_query
     if section_query:
         routes.extend(
             [
-                QueryRoute("bm25_fine_issue", section_query, "bm25", 1.35, "fine_issue"),
-                QueryRoute("bm25_focus_section", section_query, "bm25", 1.30, "focus"),
-                QueryRoute("bm25_reasoning", section_query, "bm25", 1.05, "reasoning"),
-                QueryRoute("bm25_facts", section_query, "bm25", 0.90, "facts"),
+                QueryRoute("bm25_fine_issue", section_query, "bm25", 1.20, "fine_issue"),
+                QueryRoute("bm25_focus_section", section_query, "bm25", 1.60, "focus"),
+                QueryRoute("bm25_reasoning", section_query, "bm25", 1.10, "reasoning"),
+                QueryRoute("bm25_facts", section_query, "bm25", 0.60, "facts"),
             ]
         )
     negative_query = build_negative_query(profile)
     if negative_query:
-        routes.append(QueryRoute("bm25_negative", negative_query, "bm25", 1.25))
+        routes.append(QueryRoute("bm25_negative", negative_query, "bm25", 1.20))
     legal_query = build_legal_query(profile)
     if legal_query:
         routes.append(QueryRoute("bm25_legal", legal_query, "bm25", 0.80))
