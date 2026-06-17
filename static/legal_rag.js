@@ -71,7 +71,7 @@ function collectPayload() {
     rerank_top_n: Number(document.getElementById("rerank_top_n").value || 30),
     rerank_model_weight: Number(document.getElementById("rerank_model_weight").value || 0.25),
     rerank_rank_safe: defaults.rerank_rank_safe ?? true,
-    rerank_max_rank_promotion: defaults.rerank_max_rank_promotion ?? 30,
+    rerank_max_rank_promotion: defaults.rerank_max_rank_promotion ?? 20,
     reason: document.getElementById("reason").value.trim(),
     trial_level: document.getElementById("trial_level").value.trim(),
     court_name: document.getElementById("court_name").value.trim(),
@@ -217,8 +217,7 @@ function renderMetricCard(label, value, hint = "") {
 }
 
 function renderBenchmarkMethodSummary(methodKey, methodData, isPrimary) {
-  const primary = methodData.metrics.exclude_anchor.overall || {};
-  const secondary = methodData.metrics.include_anchor.overall || {};
+  const primary = methodData.metrics.overall || {};
   return `
     <section class="benchmark-method-summary ${isPrimary ? "primary" : ""}">
       <div class="benchmark-method-title">
@@ -229,16 +228,14 @@ function renderBenchmarkMethodSummary(methodKey, methodData, isPrimary) {
         <span>${methodData.settings.rerank ? "Rerank On" : "Rerank Off"}</span>
       </div>
       <div class="benchmark-summary-grid">
-        ${renderMetricCard("Recall@20 去锚点", primary["recall@20"])}
-        ${renderMetricCard("NDCG@10 去锚点", primary["ndcg@10"])}
-        ${renderMetricCard("MRR 去锚点", primary.mrr)}
-        ${renderMetricCard("MAP 去锚点", primary.map)}
+        ${renderMetricCard("Recall@20", primary["recall@20"])}
+        ${renderMetricCard("NDCG@10", primary["ndcg@10"])}
+        ${renderMetricCard("MRR", primary.mrr)}
+        ${renderMetricCard("MAP", primary.map)}
         ${renderMetricCard("Hit@5 / Hit@10", primary["hit@5"], `Hit@10 ${metricText(primary["hit@10"])}`)}
         ${renderMetricCard("Recall@50 / @100", primary["recall@50"], `@100 ${metricText(primary["recall@100"])}`)}
       </div>
       <div class="benchmark-compare-line">
-        <span>含锚点 Recall@20 ${metricText(secondary["recall@20"])}</span>
-        <span>含锚点 NDCG@10 ${metricText(secondary["ndcg@10"])}</span>
         <span>有效 query ${intText(primary.queries_with_positive)} / ${intText(primary.queries)}</span>
       </div>
     </section>
@@ -291,7 +288,7 @@ function renderMissedPositive(row) {
 
 function failureLabel(value) {
   const labels = {
-    no_positive_after_anchor: "去锚点后无正例",
+    no_positive: "无正例",
     recall_failure: "召回失败：Top100无正例",
     ranking_failure: "排序失败：Top100有正例但Top20无正例",
     hit_top20: "Top20命中",
@@ -300,7 +297,7 @@ function failureLabel(value) {
 }
 
 function renderBenchmarkQuery(row, methodLabel) {
-  const metric = row.metrics_exclude_anchor || {};
+  const metric = row.metrics || {};
   const topHtml = (row.top_results || [])
     .map((item) => {
       const firstChunk = Array.isArray(item.matched_chunks) && item.matched_chunks.length
@@ -332,7 +329,7 @@ function renderBenchmarkQuery(row, methodLabel) {
           }</div>
           <h3>${escapeHtml(row.query_text || "")}</h3>
           <p>${escapeHtml(row.main_leaf || "")}</p>
-          <p class="anchor-line">锚点：${escapeHtml(row.query_source_doc || "")}</p>
+          <p class="anchor-line">来源案件：${escapeHtml(row.query_source_doc || "")}</p>
         </div>
         <div class="benchmark-query-score">
           <strong>${metricText(metric["recall@20"])}</strong>
@@ -393,7 +390,7 @@ function renderBenchmark(data) {
   const comparisonHtml = methodEntries
     .filter(([methodKey]) => methodKey !== primaryMethod)
     .map(([methodKey, methodData]) => {
-      const overall = methodData.metrics.exclude_anchor.overall || {};
+      const overall = methodData.metrics.overall || {};
       return `
         <div class="benchmark-compact-method">
           <strong>${escapeHtml(methodData.label || methodKey)}</strong>
@@ -421,7 +418,7 @@ async function runBenchmark() {
   const rerankTopN = Number(document.getElementById("benchmark-rerank-top-n").value || 100);
   const rerankModelWeight = Number(document.getElementById("benchmark-rerank-model-weight").value || 0.25);
   const rerankRankSafe = document.getElementById("benchmark-rerank-rank-safe").value !== "false";
-  const rerankMaxRankPromotion = Number(document.getElementById("benchmark-rerank-max-rank-promotion").value || 30);
+  const rerankMaxRankPromotion = Number(document.getElementById("benchmark-rerank-max-rank-promotion").value || 20);
   const rerankMinIntervalMs = Number(document.getElementById("benchmark-rerank-min-interval-ms").value || 1200);
   const rerankMaxRetries = Number(document.getElementById("benchmark-rerank-max-retries").value || 3);
   benchmarkButton.disabled = true;

@@ -135,31 +135,23 @@ def evaluate_single_ranking(
     query: dict[str, Any],
     ranking: list[str],
     qrels: dict[str, dict[str, Any]],
-    exclude_anchor: bool,
 ) -> dict[str, Any]:
-    anchor = query.get("query_source_doc")
     seen: set[str] = set()
     filtered_ranking: list[str] = []
     for doc_id in ranking:
         if not doc_id or doc_id in seen:
             continue
         seen.add(doc_id)
-        if exclude_anchor and doc_id == anchor:
-            continue
         filtered_ranking.append(doc_id)
-
-    rels = dict(qrels)
-    if exclude_anchor and anchor:
-        rels.pop(anchor, None)
 
     positives = {
         doc_id
-        for doc_id, item in rels.items()
+        for doc_id, item in qrels.items()
         if qrel_grade(item) >= POSITIVE_GRADE
     }
     gains = {
         doc_id: qrel_gain(item)
-        for doc_id, item in rels.items()
+        for doc_id, item in qrels.items()
     }
 
     def recall_at(k: int) -> float | None:
@@ -222,6 +214,18 @@ def public_retrieval_result(
         "doc_id": doc_id,
         "case_name": case_doc.get("case_name") or result.get("case_name") or doc_id,
         "case_score": result.get("case_score"),
+        "hybrid_case_score": result.get("hybrid_case_score"),
+        "hybrid_rank": result.get("hybrid_rank"),
+        "rerank_score": result.get("rerank_score"),
+        "rerank_fused_score": result.get("rerank_fused_score"),
+        "rerank_structure_adjustment": result.get("rerank_structure_adjustment"),
+        "rerank_guardrail_adjustment": result.get("rerank_guardrail_adjustment"),
+        "rerank_guardrail_penalty": result.get("rerank_guardrail_penalty"),
+        "rerank_guardrail_bonus": result.get("rerank_guardrail_bonus"),
+        "rerank_guardrail_missing": result.get("rerank_guardrail_missing"),
+        "rerank_guardrail_conflicts": result.get("rerank_guardrail_conflicts"),
+        "rank_safe_penalty": result.get("rank_safe_penalty"),
+        "rank_safe_allowed_rank": result.get("rank_safe_allowed_rank"),
         "hit_count": result.get("hit_count"),
         "grade": grade,
         "grade_expected": rel.get("grade_期望", 0),
@@ -294,8 +298,7 @@ def run_benchmark_method(
     include_details: bool,
 ) -> dict[str, Any]:
     method_config = BENCHMARK_METHODS[method_name]
-    include_rows: list[dict[str, Any]] = []
-    exclude_rows: list[dict[str, Any]] = []
+    metric_rows: list[dict[str, Any]] = []
     query_rows: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
 
@@ -334,34 +337,31 @@ def run_benchmark_method(
         results = result.get("results", [])
         ranking = [item.get("doc_id") for item in results if item.get("doc_id")]
         rels = qrels.get(query["query_id"], {})
-        include_metric = evaluate_single_ranking(query, ranking, rels, exclude_anchor=False)
-        exclude_metric = evaluate_single_ranking(query, ranking, rels, exclude_anchor=True)
-        include_rows.append(include_metric)
-        exclude_rows.append(exclude_metric)
+        metric = evaluate_single_ranking(query, ranking, rels)
+        metric_rows.append(metric)
 
         anchor = query.get("query_source_doc")
-        positives_without_anchor = sorted(
+        positive_doc_ids = sorted(
             doc_id
             for doc_id, item in rels.items()
-            if qrel_grade(item) >= POSITIVE_GRADE and doc_id != anchor
+            if qrel_grade(item) >= POSITIVE_GRADE
         )
-        top_docs_without_anchor = [doc_id for doc_id in ranking[:100] if doc_id != anchor]
         missed_positive_doc_ids = [
             doc_id
-            for doc_id in positives_without_anchor
-            if doc_id not in set(top_docs_without_anchor)
+            for doc_id in positive_doc_ids
+            if doc_id not in set(ranking[:100])
         ]
-        first_rank = exclude_metric.get("first_positive_rank")
+        first_rank = metric.get("first_positive_rank")
         weak_top20_count = sum(
             1
             for doc_id in ranking[:20]
-            if doc_id != anchor and qrel_grade(rels.get(doc_id, {})) == 1
+            if qrel_grade(rels.get(doc_id, {})) == 1
         )
-        if exclude_metric.get("positive_count", 0) <= 0:
-            failure_type = "no_positive_after_anchor"
-        elif not exclude_metric.get("top100_has_positive"):
+        if metric.get("positive_count", 0) <= 0:
+            failure_type = "no_positive"
+        elif not metric.get("top100_has_positive"):
             failure_type = "recall_failure"
-        elif not exclude_metric.get("top20_has_positive"):
+        elif not metric.get("top20_has_positive"):
             failure_type = "ranking_failure"
         else:
             failure_type = "hit_top20"
@@ -377,15 +377,14 @@ def run_benchmark_method(
                 "trap": bool(query.get("陷阱")),
                 "main_leaf": query.get("主叶子"),
                 "query_source_doc": anchor,
-                "positive_doc_ids_without_anchor": positives_without_anchor,
+                "positive_doc_ids": positive_doc_ids,
                 "missed_positive_doc_ids": missed_positive_doc_ids,
                 "first_positive_rank": first_rank,
-                "top20_has_positive": exclude_metric.get("top20_has_positive"),
-                "top100_has_positive": exclude_metric.get("top100_has_positive"),
+                "top20_has_positive": metric.get("top20_has_positive"),
+                "top100_has_positive": metric.get("top100_has_positive"),
                 "weak_top20_count": weak_top20_count,
                 "failure_type": failure_type,
-                "metrics_include_anchor": include_metric,
-                "metrics_exclude_anchor": exclude_metric,
+                "metrics": metric,
                 "top_results": top_results if include_details else [],
             }
         )
@@ -412,18 +411,10 @@ def run_benchmark_method(
             "chunk_index": os.getenv("LEGAL_CHUNK_INDEX", retrieval.DEFAULT_CHUNK_INDEX),
         },
         "metrics": {
-            "include_anchor": {
-                "overall": aggregate_metrics(include_rows),
-                "by_difficulty": group_metrics(include_rows, "difficulty"),
-                "by_trap": group_metrics(include_rows, "trap"),
-                "by_main_leaf": group_metrics(include_rows, "main_leaf"),
-            },
-            "exclude_anchor": {
-                "overall": aggregate_metrics(exclude_rows),
-                "by_difficulty": group_metrics(exclude_rows, "difficulty"),
-                "by_trap": group_metrics(exclude_rows, "trap"),
-                "by_main_leaf": group_metrics(exclude_rows, "main_leaf"),
-            },
+            "overall": aggregate_metrics(metric_rows),
+            "by_difficulty": group_metrics(metric_rows, "difficulty"),
+            "by_trap": group_metrics(metric_rows, "trap"),
+            "by_main_leaf": group_metrics(metric_rows, "main_leaf"),
         },
         "queries": query_rows,
         "errors": errors,
@@ -451,8 +442,8 @@ def build_method_comparison(method_results: dict[str, dict[str, Any]]) -> dict[s
     for query_id in shared_ids:
         base = hybrid_by_id[query_id]
         after = rerank_by_id[query_id]
-        base_metrics = base.get("metrics_exclude_anchor", {})
-        after_metrics = after.get("metrics_exclude_anchor", {})
+        base_metrics = base.get("metrics", {})
+        after_metrics = after.get("metrics", {})
         rows.append(
             {
                 "query_id": query_id,

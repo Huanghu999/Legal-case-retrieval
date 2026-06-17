@@ -139,7 +139,7 @@ def build_search_args(
         ),
         rerank_max_rank_promotion=int_param(
             payload.get("rerank_max_rank_promotion"),
-            default_config.get("rerank_max_rank_promotion", 30),
+            default_config.get("rerank_max_rank_promotion", 20),
         ),
         rerank_api_key=os.getenv(retrieval_module.DEFAULT_EMBEDDING_KEY_ENV),
         rerank_url=str_param(

@@ -3,19 +3,28 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>法律类案召回台</title>
+    <title>法律类案检索评估台</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='legal_rag.css') }}">
   </head>
   <body>
     <div class="page-shell">
       <header class="hero">
         <div class="hero-copy">
-          <p class="hero-kicker">Case Retrieval Workbench</p>
-          <h1>法律类案召回台</h1>
+          <p class="hero-kicker">Legal Retrieval Console</p>
+          <div class="hero-title-row">
+            <h1>法律类案检索评估台</h1>
+            <span class="hero-badge">Full-ranking eval</span>
+          </div>
           <p class="hero-subtitle">
-            把你现在这套 OpenSearch + BGE embedding + SiliconFlow rerank
-            检索链放进一个可交互的工作台里，方便做 query 调试、证据查看和原文回溯。
+            面向 CaseLaw-Bench 的检索调试工作台：同一页完成 query 召回、证据片段核查、原文回溯和完整排序 benchmark。
           </p>
+          <div class="pipeline-strip" aria-label="检索链路">
+            <span>Query profile</span>
+            <span>BM25 / Vector</span>
+            <span>RRF fusion</span>
+            <span>Case rerank</span>
+            <span>Qrels metrics</span>
+          </div>
         </div>
         <div class="hero-metrics" id="health-panel">
           <div class="metric-card">
@@ -35,6 +44,13 @@
 
       <main class="main-grid">
         <section class="search-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="results-kicker">Query Lab</p>
+              <h2>检索参数</h2>
+            </div>
+            <span class="panel-note">实时调用当前索引</span>
+          </div>
           <form id="search-form" class="search-form">
             <label class="field-group field-group-large">
               <span class="field-label">检索问题</span>
@@ -144,7 +160,7 @@
 
             <div class="action-row">
               <button type="submit" id="search-button" class="primary-action">开始检索</button>
-              <span class="inline-tip">默认会调用现有的 hybrid 召回和 SiliconFlow rerank</span>
+              <span class="inline-tip">默认使用 hybrid 召回和 SiliconFlow rerank</span>
             </div>
           </form>
         </section>
@@ -214,7 +230,7 @@
           </label>
           <label class="mini-field">
             <span>最大上升名次</span>
-            <input id="benchmark-rerank-max-rank-promotion" type="number" min="0" max="100" value="30">
+            <input id="benchmark-rerank-max-rank-promotion" type="number" min="0" max="100" value="{{ defaults.rerank_max_rank_promotion }}">
           </label>
           <label class="mini-field">
             <span>限流间隔ms</span>
@@ -227,7 +243,7 @@
         </div>
 
         <div id="benchmark-status" class="status-banner idle">
-          使用当前页面的真实 hybrid / rerank 检索链路，对 queries.jsonl 逐条召回，并按 qrels.jsonl 计算指标。
+          使用当前页面的真实 hybrid / rerank 检索链路，对 queries.jsonl 逐条召回，并按 qrels.jsonl 计算完整排序指标。
         </div>
 
         <div id="benchmark-summary" class="benchmark-summary"></div>

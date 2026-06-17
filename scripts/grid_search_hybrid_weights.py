@@ -223,7 +223,7 @@ def run_one(
         chunk_top_k=args.chunk_top_k,
     )
     duration_ms = int((time.perf_counter() - started) * 1000)
-    metrics = method_payload["metrics"]["exclude_anchor"]["overall"]
+    metrics = method_payload["metrics"]["overall"]
     query_rows = method_payload.get("queries", [])
     weak_top20_avg = average_defined([row.get("weak_top20_count") for row in query_rows])
     first_positive_rank_avg = average_defined(

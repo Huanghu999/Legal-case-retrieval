@@ -4,6 +4,7 @@ import argparse
 import base64
 import json
 import os
+import re
 import ssl
 import sys
 import time
@@ -50,6 +51,7 @@ SECTION_WEIGHTS = {
 }
 
 KEY_SECTION_TYPES = {"fine_issue", "focus", "reasoning", "facts"}
+LEGAL_RERANK_SECTION_TYPES = {"fine_issue", "focus", "reasoning"}
 CASE_KEY_SECTION_TYPES = {"case_profile", "fine_issue", "focus", "reasoning", "facts"}
 CASE_RERANK_SECTION_ORDER = [
     "fine_issue",
@@ -60,13 +62,155 @@ CASE_RERANK_SECTION_ORDER = [
     "claims",
     "judgment",
 ]
+CASE_RERANK_SECTION_BUDGETS = {
+    "fine_issue": 700,
+    "focus": 700,
+    "reasoning": 900,
+    "case_profile": 420,
+    "facts": 320,
+    "judgment": 240,
+    "claims": 220,
+    "defense": 220,
+}
+CASE_RERANK_SECTION_GROUPS = {
+    "case_profile": "【案件画像】",
+    "fine_issue": "【核心争议】",
+    "focus": "【核心争议】",
+    "reasoning": "【裁判规则】",
+    "facts": "【关键事实】",
+    "judgment": "【裁判结果】",
+    "claims": "【诉请摘要】",
+    "defense": "【抗辩摘要】",
+}
+CASE_RERANK_MAX_SELECTED_CHUNKS = 6
+RERANK_GUARDRAIL_TEXT_LIMIT = 5000
+RERANK_GUARDRAIL_MAX_CHUNKS = 12
+RERANK_NEGATION_LOOKBACK = 18
+RERANK_NEGATION_CUES = [
+    "完全未涉及",
+    "并未涉及",
+    "未涉及",
+    "不涉及",
+    "未提及",
+    "未载明",
+    "未显示",
+    "未体现",
+    "未说明",
+    "未论及",
+    "未主张",
+    "未请求",
+    "没有",
+    "并无",
+    "均无",
+    "不存在",
+    "不包含",
+    "未见",
+    "未发现",
+]
+RERANK_SINGLE_CHAR_NEGATION_CUES = ["无"]
+RERANK_REQUIRED_FACTORS = [
+    {
+        "name": "ownership_retention",
+        "query_any": ["所有权保留", "取回权", "留置所有权"],
+        "doc_any": ["所有权保留", "取回权", "返还货物", "留置所有权"],
+        "penalty": 0.18,
+    },
+    {
+        "name": "deposit_penalty",
+        "query_any": ["定金罚则", "成约定金", "违约定金", "返还定金"],
+        "doc_any": ["定金罚则", "成约定金", "违约定金", "返还定金", "没收定金", "双倍返还定金"],
+        "penalty": 0.12,
+    },
+    {
+        "name": "invoice_dispute",
+        "query_any": [
+            "发票争议",
+            "未开票",
+            "未开发票",
+            "未开具发票",
+            "拒开发票",
+            "开票义务",
+            "开具发票",
+            "补开发票",
+            "发票问题",
+        ],
+        "doc_any": ["发票争议", "未开票", "开票", "发票", "增值税发票"],
+        "penalty": 0.06,
+    },
+    {
+        "name": "third_party_supply",
+        "query_any": ["第三方供货", "第三方代为供货", "第三人供货", "代为供货", "指示第三方"],
+        "doc_any": ["第三方供货", "第三方代为供货", "第三人供货", "代为供货", "指示第三方", "第三人履行"],
+        "penalty": 0.10,
+    },
+    {
+        "name": "reconciliation_silence",
+        "query_all": ["对账单"],
+        "query_any": ["未在合理期限", "未提出异议", "未及时提出异议", "视为认可", "结算依据"],
+        "doc_any": ["对账单", "未提出异议", "未在合理期限", "结算依据", "对账", "结算单"],
+        "penalty": 0.08,
+    },
+    {
+        "name": "seal_dispute",
+        "query_any": ["偷盖", "冒盖", "私盖", "收货确认单", "合同外供货"],
+        "doc_any": ["偷盖", "冒盖", "私盖", "印章", "收货确认单", "合同外供货", "盖章", "公章"],
+        "penalty": 0.10,
+    },
+    {
+        "name": "oral_contract_evidence",
+        "query_any": ["口头买卖", "微信聊天记录", "仅凭微信", "无书面合同"],
+        "doc_any": ["口头买卖", "微信聊天记录", "无书面合同", "聊天记录", "微信"],
+        "penalty": 0.10,
+    },
+    {
+        "name": "termination_time",
+        "query_any": ["解除时间", "解除时间如何认定", "起诉状副本送达", "送达时解除"],
+        "doc_any": ["解除时间", "起诉状副本送达", "送达时解除", "解除通知", "合同解除时间"],
+        "penalty": 0.10,
+    },
+    {
+        "name": "agency_or_third_payment",
+        "query_any": ["委托他人", "代付", "案外人", "以自己名义"],
+        "doc_any": ["委托他人", "代付", "案外人", "以自己名义", "第三人付款", "第三人代付", "代为支付"],
+        "penalty": 0.04,
+    },
+]
+RERANK_CONFLICT_FACTORS = [
+    {
+        "name": "defective_delivery_vs_non_delivery",
+        "query_any": ["瑕疵", "异物", "碎骨", "淤血", "淋巴", "质量"],
+        "doc_any": ["未交货", "未发货", "未交付", "迟延交货", "逾期交货", "未履行交货"],
+        "doc_required_absent": ["瑕疵", "异物", "碎骨", "淤血", "淋巴", "质量"],
+        "penalty": 0.14,
+    },
+    {
+        "name": "non_delivery_vs_defective_delivery",
+        "query_any": ["未交货", "未发货", "未交付"],
+        "doc_any": ["质量异议", "瑕疵", "异物", "质量问题"],
+        "doc_required_absent": ["未交货", "未发货", "未交付"],
+        "penalty": 0.10,
+    },
+    {
+        "name": "buyer_default_vs_seller_default",
+        "query_any": ["未按约提车", "拒收", "价格过高", "买方拒收", "买方未提货", "买方未按约"],
+        "doc_any": ["卖方未交货", "出卖人未交货", "卖方未发货", "出卖人未发货", "卖方根本违约"],
+        "penalty": 0.08,
+    },
+    {
+        "name": "collateral_invoice_only",
+        "query_any": ["定金罚则", "所有权保留", "解除时间", "第三方供货"],
+        "doc_any": ["发票", "开票"],
+        "doc_required_absent": ["定金罚则", "所有权保留", "解除时间", "第三方供货", "第三方代为供货"],
+        "penalty": 0.04,
+    },
+]
 CASE_RERANK_HYBRID_WEIGHT = 0.65
 CASE_RERANK_MODEL_WEIGHT = 0.25
 CASE_RERANK_TEXT_LIMIT = 3600
 DEFAULT_RERANK_MIN_INTERVAL_MS = 1200
 DEFAULT_RERANK_MAX_RETRIES = 3
 DEFAULT_RERANK_RANK_SAFE = True
-DEFAULT_RERANK_MAX_RANK_PROMOTION = 30
+DEFAULT_RERANK_MAX_RANK_PROMOTION = 20
 _LAST_RERANK_REQUEST_AT = 0.0
 
 DEFAULT_SOURCE_FIELDS = [
@@ -572,45 +716,248 @@ def normalize_scores(values: list[float]) -> list[float]:
     ]
 
 
+def case_rerank_section_rank(section_type: str) -> int:
+    if section_type in CASE_RERANK_SECTION_ORDER:
+        return CASE_RERANK_SECTION_ORDER.index(section_type)
+    return len(CASE_RERANK_SECTION_ORDER)
+
+
+def rerank_chunk_key(chunk: ChunkHit) -> str:
+    if chunk.chunk_id:
+        return chunk.chunk_id
+    return f"{chunk.doc_id}:{chunk.section_type}:{chunk.chunk_text[:80]}"
+
+
+def merge_rerank_chunks(case_hit: dict[str, Any]) -> list[ChunkHit]:
+    chunks_by_key: dict[str, ChunkHit] = {}
+    chunks = list(case_hit.get("_rerank_chunks") or []) + list(case_hit.get("matched_chunks") or [])
+    for chunk in chunks:
+        if not isinstance(chunk, ChunkHit):
+            continue
+        key = rerank_chunk_key(chunk)
+        current = chunks_by_key.get(key)
+        if current is None:
+            chunks_by_key[key] = chunk
+            continue
+        current.score = max(current.score, chunk.score)
+        for source in chunk.match_sources:
+            if source not in current.match_sources:
+                current.match_sources.append(source)
+        current.raw_scores.update(chunk.raw_scores)
+    return sorted(
+        chunks_by_key.values(),
+        key=lambda item: (
+            case_rerank_section_rank(item.section_type),
+            -item.score,
+        ),
+    )
+
+
+def case_hit_sections(case_hit: dict[str, Any]) -> set[str]:
+    sections = {
+        str(section)
+        for section in case_hit.get("matched_sections", [])
+        if section
+    }
+    for chunk in list(case_hit.get("_rerank_chunks") or []) + list(case_hit.get("matched_chunks") or []):
+        if isinstance(chunk, ChunkHit) and chunk.section_type:
+            sections.add(chunk.section_type)
+    return sections
+
+
+def contains_any(text: str, terms: list[str]) -> bool:
+    return any(term and term in text for term in terms)
+
+
+def has_negation_before(text: str, start_index: int) -> bool:
+    window = text[max(0, start_index - RERANK_NEGATION_LOOKBACK):start_index]
+    compact_window = re.sub(r"\s+", "", window)
+    if any(cue in compact_window for cue in RERANK_NEGATION_CUES):
+        return True
+    return any(compact_window.endswith(cue) for cue in RERANK_SINGLE_CHAR_NEGATION_CUES)
+
+
+def positive_term_hits(text: str, terms: list[str]) -> list[str]:
+    hits: list[str] = []
+    for term in terms:
+        if not term:
+            continue
+        for match in re.finditer(re.escape(term), text):
+            if has_negation_before(text, match.start()):
+                continue
+            hits.append(term)
+            break
+    return hits
+
+
+def contains_positive_any(text: str, terms: list[str]) -> bool:
+    return bool(positive_term_hits(text, terms))
+
+
+def case_guardrail_text(case_hit: dict[str, Any]) -> str:
+    parts = [
+        str(case_hit.get("case_name") or ""),
+        str(case_hit.get("reason") or ""),
+    ]
+    chunks = sorted(
+        merge_rerank_chunks(case_hit),
+        key=lambda item: (
+            0 if item.section_type in CASE_KEY_SECTION_TYPES else 1,
+            case_rerank_section_rank(item.section_type),
+            -item.score,
+        ),
+    )
+    for chunk in chunks[:RERANK_GUARDRAIL_MAX_CHUNKS]:
+        parts.append(chunk.section_title or chunk.section_type or "")
+        parts.append(chunk.chunk_text)
+    return compact_text(" ".join(parts), limit=RERANK_GUARDRAIL_TEXT_LIMIT)
+
+
+def guardrail_factor_applies(query_text: str, factor: dict[str, Any]) -> bool:
+    all_terms = factor.get("query_all", [])
+    if all_terms and not all(term and term in query_text for term in all_terms):
+        return False
+    return contains_any(query_text, factor["query_any"])
+
+
+def rerank_guardrail_adjustment(query: str, case_hit: dict[str, Any]) -> dict[str, Any]:
+    query_text = compact_text(query, limit=RERANK_GUARDRAIL_TEXT_LIMIT)
+    doc_text = case_guardrail_text(case_hit)
+    missing: list[str] = []
+    conflicts: list[str] = []
+    penalty = 0.0
+    matched_required = 0
+
+    for factor in RERANK_REQUIRED_FACTORS:
+        if not guardrail_factor_applies(query_text, factor):
+            continue
+        if contains_positive_any(doc_text, factor["doc_any"]):
+            matched_required += 1
+            continue
+        missing.append(str(factor["name"]))
+        penalty += float(factor["penalty"])
+
+    for factor in RERANK_CONFLICT_FACTORS:
+        if not guardrail_factor_applies(query_text, factor):
+            continue
+        if not contains_positive_any(doc_text, factor["doc_any"]):
+            continue
+        absent_terms = factor.get("doc_required_absent", [])
+        if absent_terms and contains_positive_any(doc_text, absent_terms):
+            continue
+        conflicts.append(str(factor["name"]))
+        penalty += float(factor["penalty"])
+
+    if matched_required and not missing and not conflicts:
+        bonus = min(0.02, 0.008 * matched_required)
+    else:
+        bonus = 0.0
+
+    return {
+        "penalty": min(0.35, penalty),
+        "bonus": bonus,
+        "missing": missing,
+        "conflicts": conflicts,
+    }
+
+
+def rerank_structure_adjustment(case_hit: dict[str, Any]) -> float:
+    sections = case_hit_sections(case_hit)
+    legal_sections = sections & LEGAL_RERANK_SECTION_TYPES
+    weak_only_sections = sections and not legal_sections and sections <= {"facts", "claims", "defense"}
+
+    adjustment = min(0.06, 0.025 * len(legal_sections))
+    if {"fine_issue", "focus"} <= sections:
+        adjustment += 0.02
+    if "reasoning" in sections and (sections & {"fine_issue", "focus"}):
+        adjustment += 0.02
+    if weak_only_sections:
+        adjustment -= 0.08
+    elif "facts" in sections and not legal_sections:
+        adjustment -= 0.04
+    return adjustment
+
+
+def rerank_allowed_rank(original_rank: int, max_rank_promotion: int) -> int:
+    if original_rank <= 20:
+        return max(1, original_rank - max_rank_promotion)
+    if original_rank <= 50:
+        return max(11, original_rank - max_rank_promotion)
+    return max(21, original_rank - max_rank_promotion)
+
+
+def select_case_rerank_chunks(case_hit: dict[str, Any]) -> list[ChunkHit]:
+    chunks = merge_rerank_chunks(case_hit)
+    selected: list[ChunkHit] = []
+    selected_keys: set[str] = set()
+
+    for section_type in CASE_RERANK_SECTION_ORDER:
+        candidates = [chunk for chunk in chunks if chunk.section_type == section_type]
+        if not candidates:
+            continue
+        chunk = max(candidates, key=lambda item: item.score)
+        selected.append(chunk)
+        selected_keys.add(rerank_chunk_key(chunk))
+        if len(selected) >= CASE_RERANK_MAX_SELECTED_CHUNKS:
+            return selected
+
+    scored_chunks = sorted(
+        chunks,
+        key=lambda item: (
+            0 if item.section_type in LEGAL_RERANK_SECTION_TYPES else 1,
+            -item.score,
+            case_rerank_section_rank(item.section_type),
+        ),
+    )
+    for chunk in scored_chunks:
+        if len(selected) >= CASE_RERANK_MAX_SELECTED_CHUNKS:
+            break
+        key = rerank_chunk_key(chunk)
+        if key in selected_keys:
+            continue
+        selected.append(chunk)
+        selected_keys.add(key)
+    return selected
+
+
 def build_case_rerank_passage(case_hit: dict[str, Any]) -> str:
     parts: list[str] = []
+    meta_parts: list[str] = []
     if case_hit.get("case_name"):
-        parts.append(f"案名：{case_hit['case_name']}")
+        meta_parts.append(f"案名：{case_hit['case_name']}")
     if case_hit.get("reason"):
-        parts.append(f"案由：{case_hit['reason']}")
+        meta_parts.append(f"案由：{case_hit['reason']}")
     if case_hit.get("trial_level"):
-        parts.append(f"审级：{case_hit['trial_level']}")
+        meta_parts.append(f"审级：{case_hit['trial_level']}")
+    if meta_parts:
+        parts.append("【案件类型】\n" + "\n".join(meta_parts))
 
-    chunks = list(case_hit.get("_rerank_chunks") or case_hit.get("matched_chunks") or [])
-    chunks.sort(
-        key=lambda hit: (
-            CASE_RERANK_SECTION_ORDER.index(hit.section_type)
-            if hit.section_type in CASE_RERANK_SECTION_ORDER
-            else len(CASE_RERANK_SECTION_ORDER),
-            -hit.score,
-        )
-    )
-    selected: list[ChunkHit] = []
-    seen_sections: set[str] = set()
-    for section_type in CASE_RERANK_SECTION_ORDER:
-        for chunk in chunks:
-            if chunk.section_type == section_type and chunk.section_type not in seen_sections:
-                selected.append(chunk)
-                seen_sections.add(chunk.section_type)
-                break
-    for chunk in chunks:
-        if len(selected) >= 6:
-            break
-        if chunk not in selected:
-            selected.append(chunk)
-
-    for chunk in selected:
-        section_label = chunk.section_title or chunk.section_type or "片段"
-        text = compact_text(chunk.chunk_text, limit=800)
+    grouped_parts: dict[str, list[str]] = defaultdict(list)
+    for chunk in select_case_rerank_chunks(case_hit):
+        section_type = chunk.section_type or ""
+        section_group = CASE_RERANK_SECTION_GROUPS.get(section_type, "【相关片段】")
+        section_label = chunk.section_title or section_type or "片段"
+        budget = CASE_RERANK_SECTION_BUDGETS.get(section_type, 360)
+        text = compact_text(chunk.chunk_text, limit=budget)
         if text:
-            parts.append(f"{section_label}：{text}")
+            grouped_parts[section_group].append(f"{section_label}：{text}")
 
-    return compact_text("\n".join(parts), limit=CASE_RERANK_TEXT_LIMIT)
+    group_order = [
+        "【案件画像】",
+        "【核心争议】",
+        "【裁判规则】",
+        "【关键事实】",
+        "【裁判结果】",
+        "【诉请摘要】",
+        "【抗辩摘要】",
+        "【相关片段】",
+    ]
+    for group_name in group_order:
+        entries = grouped_parts.get(group_name, [])
+        if entries:
+            parts.append(group_name + "\n" + "\n".join(entries))
+
+    return compact_text("\n\n".join(parts), limit=CASE_RERANK_TEXT_LIMIT)
 
 
 def fetch_case_key_chunks(
@@ -683,10 +1030,19 @@ def apply_rank_safe_rerank(
 
     for new_rank, item in enumerate(rescored_candidates, start=1):
         original_rank = int(item.get("hybrid_rank") or 10**9)
-        over_promotion = max(0, original_rank - new_rank - max_rank_promotion)
+        allowed_rank = rerank_allowed_rank(original_rank, max_rank_promotion)
+        over_promotion = max(0, allowed_rank - new_rank)
+        sections = case_hit_sections(item)
+        if new_rank <= 10 and not (sections & LEGAL_RERANK_SECTION_TYPES):
+            over_promotion += 3
+        if new_rank <= 10 and (
+            item.get("rerank_guardrail_missing") or item.get("rerank_guardrail_conflicts")
+        ):
+            over_promotion += 4
         if over_promotion:
             penalty = min(0.80, 0.025 * over_promotion)
             item["rank_safe_penalty"] = penalty
+            item["rank_safe_allowed_rank"] = allowed_rank
             item["case_score"] = float(item.get("case_score") or 0.0) - penalty
 
     return sorted(rescored_candidates, key=lambda item: item["case_score"], reverse=True)
@@ -759,11 +1115,21 @@ def rerank_case_hits(
             hybrid_weight * hybrid_norm[index]
             + bounded_model_weight * model_norm[index]
         )
+        structure_adjustment = rerank_structure_adjustment(item)
+        guardrail = rerank_guardrail_adjustment(query, item)
+        guardrail_adjustment = float(guardrail["bonus"]) - float(guardrail["penalty"])
+        fused_score = max(0.0, fused_score + structure_adjustment + guardrail_adjustment)
         updated = dict(item)
         updated["case_score"] = fused_score
         updated["hybrid_case_score"] = original_score
         updated["rerank_score"] = rerank_score
         updated["rerank_fused_score"] = fused_score
+        updated["rerank_structure_adjustment"] = structure_adjustment
+        updated["rerank_guardrail_adjustment"] = guardrail_adjustment
+        updated["rerank_guardrail_penalty"] = guardrail["penalty"]
+        updated["rerank_guardrail_bonus"] = guardrail["bonus"]
+        updated["rerank_guardrail_missing"] = guardrail["missing"]
+        updated["rerank_guardrail_conflicts"] = guardrail["conflicts"]
         updated["rerank_model_weight"] = bounded_model_weight
         updated["rerank_hybrid_weight"] = hybrid_weight
         rescored_candidates.append(updated)

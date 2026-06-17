@@ -38,7 +38,7 @@ grade_主档 >= 2
 - `grade=1`：弱相关干扰项，不计为正例。
 - `grade=0`：负例。
 
-主报告采用去锚点口径，即评估时会排除 query 自身来源案件 `query_source_doc`。
+主报告采用完整口径，即评估时保留 query 自身来源案件 `query_source_doc`，所有指标都按完整 ranking 计算。
 
 ## 3. 索引构建流程
 
@@ -262,7 +262,7 @@ qrels.jsonl
 - TopK：100。
 - candidate size：300。
 - 方法：`hybrid` 和 `hybrid_rerank`。
-- 主口径：去锚点。
+- 主口径：完整 ranking，不再保留去锚点对照。
 
 输出指标包括：
 
