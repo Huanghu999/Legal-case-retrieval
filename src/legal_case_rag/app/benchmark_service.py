@@ -19,6 +19,9 @@ BENCHMARK_METHODS = {
 }
 BENCHMARK_METRICS = [
     "ndcg@10",
+    "expected_ndcg@10",
+    "expected_ndcg@20",
+    "expected_ndcg@50",
     "hit@5",
     "hit@10",
     "recall@20",
@@ -121,6 +124,28 @@ def dcg(gains: list[float]) -> float:
     return sum((2**gain - 1) / math.log2(index + 2) for index, gain in enumerate(gains))
 
 
+def expected_dcg(gains: list[float]) -> float:
+    return sum(gain / math.log2(index + 2) for index, gain in enumerate(gains))
+
+
+def ndcg_at(ranking: list[str], gains: dict[str, float], k: int) -> float | None:
+    ranked_gains = [gains.get(doc_id, 0.0) for doc_id in ranking[:k]]
+    ideal_gains = sorted(gains.values(), reverse=True)[:k]
+    ideal_dcg = dcg(ideal_gains)
+    if ideal_dcg <= 0:
+        return None
+    return dcg(ranked_gains) / ideal_dcg
+
+
+def expected_ndcg_at(ranking: list[str], gains: dict[str, float], k: int) -> float | None:
+    ranked_gains = [gains.get(doc_id, 0.0) for doc_id in ranking[:k]]
+    ideal_gains = sorted(gains.values(), reverse=True)[:k]
+    ideal_dcg = expected_dcg(ideal_gains)
+    if ideal_dcg <= 0:
+        return None
+    return expected_dcg(ranked_gains) / ideal_dcg
+
+
 def average_precision(ranking: list[str], positives: set[str]) -> float | None:
     if not positives:
         return None
@@ -179,9 +204,10 @@ def evaluate_single_ranking(
             return None
         return len(set(filtered_ranking[:k]) & positives) / len(positives)
 
-    top10_gains = [gains.get(doc_id, 0.0) for doc_id in filtered_ranking[:10]]
-    ideal10 = sorted(gains.values(), reverse=True)[:10]
-    ideal_dcg = dcg(ideal10)
+    legacy_ndcg_10 = ndcg_at(filtered_ranking, gains, 10)
+    expected_ndcg_10 = expected_ndcg_at(filtered_ranking, gains, 10)
+    expected_ndcg_20 = expected_ndcg_at(filtered_ranking, gains, 20)
+    expected_ndcg_50 = expected_ndcg_at(filtered_ranking, gains, 50)
     first_rank = first_positive_rank(filtered_ranking, positives)
     return {
         "query_id": query.get("query_id"),
@@ -199,7 +225,10 @@ def evaluate_single_ranking(
         "recall@100": recall_at(100),
         "mrr": reciprocal_rank(filtered_ranking, positives),
         "map": average_precision(filtered_ranking, positives),
-        "ndcg@10": dcg(top10_gains) / ideal_dcg if ideal_dcg > 0 else None,
+        "ndcg@10": legacy_ndcg_10,
+        "expected_ndcg@10": expected_ndcg_10,
+        "expected_ndcg@20": expected_ndcg_20,
+        "expected_ndcg@50": expected_ndcg_50,
         "returned_count": len(filtered_ranking),
     }
 
@@ -217,6 +246,110 @@ def aggregate_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
     metrics.update({name: mean_defined([row.get(name) for row in rows]) for name in BENCHMARK_METRICS})
     return metrics
+
+
+def diagnose_benchmark_query(row: dict[str, Any]) -> dict[str, Any]:
+    metrics = row.get("metrics", {})
+    positive_count = int(metrics.get("positive_count", 0) or 0)
+    expected_ndcg_20 = metrics.get("expected_ndcg@20")
+    weak_top20_count = int(row.get("weak_top20_count", 0) or 0)
+    first_positive_rank = row.get("first_positive_rank")
+    top20_has_positive = bool(row.get("top20_has_positive"))
+    top100_has_positive = bool(row.get("top100_has_positive"))
+
+    if positive_count <= 0:
+        return {
+            "label": "no_positive",
+            "bucket": "excluded",
+            "reason": "query has no positive judged cases",
+        }
+    if not top100_has_positive:
+        return {
+            "label": "recall_failure",
+            "bucket": "recall",
+            "reason": "no positive case retrieved in top 100",
+        }
+    if not top20_has_positive:
+        return {
+            "label": "ranking_failure",
+            "bucket": "ranking",
+            "reason": "positive case retrieved in top 100 but not top 20",
+        }
+    if expected_ndcg_20 is not None and float(expected_ndcg_20) < 0.60 and weak_top20_count >= 10:
+        return {
+            "label": "front_pollution",
+            "bucket": "ranking",
+            "reason": "top 20 contains too many weakly related cases",
+        }
+    if first_positive_rank is not None and int(first_positive_rank) > 10:
+        return {
+            "label": "late_positive",
+            "bucket": "ranking",
+            "reason": "first positive case appears too late in ranking",
+        }
+    if expected_ndcg_20 is not None and float(expected_ndcg_20) < 0.60:
+        return {
+            "label": "low_alignment",
+            "bucket": "ranking",
+            "reason": "ranking alignment with graded qrels is still weak",
+        }
+    return {
+        "label": "good",
+        "bucket": "good",
+        "reason": "query has at least one positive case in top 20 with acceptable alignment",
+    }
+
+
+def build_query_diagnosis_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    labels: dict[str, int] = {}
+    buckets: dict[str, int] = {}
+    for row in rows:
+        diagnosis = row.get("diagnosis", {})
+        label = str(diagnosis.get("label", "unknown"))
+        bucket = str(diagnosis.get("bucket", "unknown"))
+        labels[label] = labels.get(label, 0) + 1
+        buckets[bucket] = buckets.get(bucket, 0) + 1
+    return {
+        "total_queries": len(rows),
+        "labels": labels,
+        "buckets": buckets,
+    }
+
+
+def build_query_diagnosis_export_rows(
+    method_name: str,
+    method_payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in method_payload.get("queries", []):
+        metrics = row.get("metrics", {})
+        diagnosis = row.get("diagnosis", {})
+        rows.append(
+            {
+                "method": method_name,
+                "query_id": row.get("query_id", ""),
+                "query_text": row.get("query_text", ""),
+                "difficulty": row.get("difficulty", ""),
+                "trap": row.get("trap", False),
+                "main_leaf": row.get("main_leaf", ""),
+                "positive_count": metrics.get("positive_count"),
+                "expected_ndcg@20": metrics.get("expected_ndcg@20"),
+                "recall@20": metrics.get("recall@20"),
+                "recall@100": metrics.get("recall@100"),
+                "mrr": metrics.get("mrr"),
+                "first_positive_rank": row.get("first_positive_rank"),
+                "top20_has_positive": row.get("top20_has_positive"),
+                "top100_has_positive": row.get("top100_has_positive"),
+                "weak_top20_count": row.get("weak_top20_count"),
+                "failure_type": row.get("failure_type", ""),
+                "diagnosis_label": diagnosis.get("label", ""),
+                "diagnosis_bucket": diagnosis.get("bucket", ""),
+                "diagnosis_reason": diagnosis.get("reason", ""),
+                "positive_doc_ids": ",".join(str(doc_id) for doc_id in row.get("positive_doc_ids", [])),
+                "missed_positive_doc_ids": ",".join(str(doc_id) for doc_id in row.get("missed_positive_doc_ids", [])),
+            }
+        )
+    return rows
 
 
 def public_retrieval_result(
@@ -409,6 +542,9 @@ def run_benchmark_method(
             }
         )
 
+    for row in query_rows:
+        row["diagnosis"] = diagnose_benchmark_query(row)
+
     return {
         "label": method_config["label"],
         "settings": {
@@ -436,6 +572,7 @@ def run_benchmark_method(
             "by_trap": group_metrics(metric_rows, "trap"),
             "by_main_leaf": group_metrics(metric_rows, "main_leaf"),
         },
+        "diagnosis_summary": build_query_diagnosis_summary(query_rows),
         "queries": query_rows,
         "errors": errors,
     }
@@ -475,6 +612,7 @@ def build_method_comparison(method_results: dict[str, dict[str, Any]]) -> dict[s
                 "rerank_first_positive_rank": after.get("first_positive_rank"),
                 "hybrid_weak_top20_count": base.get("weak_top20_count"),
                 "rerank_weak_top20_count": after.get("weak_top20_count"),
+                "delta_expected_ndcg@20": metric_delta(after_metrics, base_metrics, "expected_ndcg@20"),
                 "delta_recall@20": metric_delta(after_metrics, base_metrics, "recall@20"),
                 "delta_ndcg@10": metric_delta(after_metrics, base_metrics, "ndcg@10"),
                 "delta_mrr": metric_delta(after_metrics, base_metrics, "mrr"),

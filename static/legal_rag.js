@@ -228,6 +228,8 @@ function renderBenchmarkMethodSummary(methodKey, methodData, isPrimary) {
         <span>${methodData.settings.rerank ? "Rerank On" : "Rerank Off"}</span>
       </div>
       <div class="benchmark-summary-grid">
+        ${renderMetricCard("Expected NDCG@20", primary["expected_ndcg@20"])}
+        ${renderMetricCard("Expected NDCG@10 / @50", primary["expected_ndcg@10"], `@50 ${metricText(primary["expected_ndcg@50"])}`)}
         ${renderMetricCard("Recall@20", primary["recall@20"])}
         ${renderMetricCard("NDCG@10", primary["ndcg@10"])}
         ${renderMetricCard("MRR", primary.mrr)}
@@ -342,6 +344,7 @@ function renderBenchmarkQuery(row, methodLabel) {
         <span>Hit@10 ${escapeHtml(metricText(metric["hit@10"]))}</span>
         <span>MRR ${escapeHtml(metricText(metric.mrr))}</span>
         <span>MAP ${escapeHtml(metricText(metric.map))}</span>
+        <span>Expected NDCG@20 ${escapeHtml(metricText(metric["expected_ndcg@20"]))}</span>
         <span>NDCG@10 ${escapeHtml(metricText(metric["ndcg@10"]))}</span>
         <span>首正例 ${escapeHtml(row.first_positive_rank ?? "n/a")}</span>
         <span>Top20弱相关 ${escapeHtml(row.weak_top20_count ?? 0)}</span>
@@ -357,12 +360,13 @@ function renderComparisonDelta(data) {
   const rows = data.comparison?.queries || [];
   if (!rows.length) return "";
   const sorted = [...rows]
-    .filter((row) => row["delta_ndcg@10"] !== null || row.delta_mrr !== null)
-    .sort((a, b) => Number(a["delta_ndcg@10"] || 0) - Number(b["delta_ndcg@10"] || 0))
+    .filter((row) => row["delta_expected_ndcg@20"] !== null || row["delta_ndcg@10"] !== null || row.delta_mrr !== null)
+    .sort((a, b) => Number(a["delta_expected_ndcg@20"] || 0) - Number(b["delta_expected_ndcg@20"] || 0))
     .slice(0, 8);
   const rowHtml = sorted.map((row) => `
     <div class="benchmark-delta-row">
       <strong>${escapeHtml(row.query_id)}</strong>
+      <span>Expected NDCG@20 ${metricText(row["delta_expected_ndcg@20"])}</span>
       <span>NDCG ${metricText(row["delta_ndcg@10"])}</span>
       <span>MRR ${metricText(row.delta_mrr)}</span>
       <span>Recall@20 ${metricText(row["delta_recall@20"])}</span>
@@ -394,6 +398,7 @@ function renderBenchmark(data) {
       return `
         <div class="benchmark-compact-method">
           <strong>${escapeHtml(methodData.label || methodKey)}</strong>
+          <span>Expected NDCG@20 ${metricText(overall["expected_ndcg@20"])}</span>
           <span>Recall@20 ${metricText(overall["recall@20"])}</span>
           <span>NDCG@10 ${metricText(overall["ndcg@10"])}</span>
           <span>MAP ${metricText(overall.map)}</span>

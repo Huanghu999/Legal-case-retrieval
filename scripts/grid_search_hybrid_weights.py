@@ -57,6 +57,9 @@ CSV_FIELDS = [
     "recall@50",
     "recall@100",
     "ndcg@10",
+    "expected_ndcg@10",
+    "expected_ndcg@20",
+    "expected_ndcg@50",
     "mrr",
     "map",
     "hit@5",
@@ -76,9 +79,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate-size", type=int, default=300)
     parser.add_argument("--chunk-top-k", type=int, default=2)
     parser.add_argument("--output-dir", type=Path, default=None)
-    parser.add_argument("--score-ndcg-weight", type=float, default=0.40)
+    parser.add_argument("--score-expected-ndcg20-weight", type=float, default=0.50)
+    parser.add_argument("--score-ndcg-weight", type=float, default=0.15)
     parser.add_argument("--score-mrr-weight", type=float, default=0.35)
-    parser.add_argument("--score-recall20-weight", type=float, default=0.25)
+    parser.add_argument("--score-recall20-weight", type=float, default=0.0)
     parser.add_argument("--include-details", action="store_true")
     return parser.parse_args()
 
@@ -190,7 +194,8 @@ def average_defined(values: list[Any]) -> float | None:
 
 def optimization_score(metrics: dict[str, Any], args: argparse.Namespace) -> float:
     return (
-        args.score_ndcg_weight * value_or_zero(metrics.get("ndcg@10"))
+        args.score_expected_ndcg20_weight * value_or_zero(metrics.get("expected_ndcg@20"))
+        + args.score_ndcg_weight * value_or_zero(metrics.get("ndcg@10"))
         + args.score_mrr_weight * value_or_zero(metrics.get("mrr"))
         + args.score_recall20_weight * value_or_zero(metrics.get("recall@20"))
     )
@@ -251,6 +256,9 @@ def run_one(
         "recall@50",
         "recall@100",
         "ndcg@10",
+        "expected_ndcg@10",
+        "expected_ndcg@20",
+        "expected_ndcg@50",
         "mrr",
         "map",
         "hit@5",
@@ -307,6 +315,7 @@ def main() -> int:
             print(
                 f"[{index}/{len(weight_sets)}] {item['preset_name']} "
                 f"score={row['optimization_score']:.4f} "
+                f"expected_ndcg@20={value_or_zero(row.get('expected_ndcg@20')):.4f} "
                 f"ndcg@10={value_or_zero(row.get('ndcg@10')):.4f} "
                 f"mrr={value_or_zero(row.get('mrr')):.4f} "
                 f"recall@20={value_or_zero(row.get('recall@20')):.4f}",
@@ -335,6 +344,7 @@ def main() -> int:
                 "candidate_size": args.candidate_size,
                 "chunk_top_k": args.chunk_top_k,
                 "score_weights": {
+                    "expected_ndcg@20": args.score_expected_ndcg20_weight,
                     "ndcg@10": args.score_ndcg_weight,
                     "mrr": args.score_mrr_weight,
                     "recall@20": args.score_recall20_weight,
