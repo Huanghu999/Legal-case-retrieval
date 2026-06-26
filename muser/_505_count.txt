@@ -1,0 +1,9 @@
+Sheet: Legal Fact
+  Level 2 条目: 69
+  Level 3 条目: 211
+
+Sheet: Dispute Focus
+  Level 2 条目: 119
+  Level 3 条目: 294
+
+总计 Level 3 细分点: 505

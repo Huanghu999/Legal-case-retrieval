@@ -131,6 +131,8 @@ def run_search(args: argparse.Namespace) -> dict[str, Any]:
         k=60,
     )
     if args.rerank:
+        rerank_query = build_rerank_query(profile, rewrite if rewrite.used else None) if query_profile_enabled else args.query
+        guardrail_query = build_rerank_query(profile) if query_profile_enabled else args.query
         attach_case_key_chunks(
             client=client,
             index_name=args.chunk_index,
@@ -138,7 +140,7 @@ def run_search(args: argparse.Namespace) -> dict[str, Any]:
             top_n=max(args.top_k, args.rerank_top_n),
         )
         case_hits = rerank_case_hits(
-            query=build_rerank_query(profile) if query_profile_enabled else args.query,
+            query=rerank_query,
             case_hits=case_hits,
             model_name=args.rerank_model,
             api_key=args.rerank_api_key,
@@ -152,6 +154,7 @@ def run_search(args: argparse.Namespace) -> dict[str, Any]:
             max_retries=args.rerank_max_retries,
             rank_safe=args.rerank_rank_safe,
             max_rank_promotion=args.rerank_max_rank_promotion,
+            guardrail_query=guardrail_query,
         )
     top_doc_ids = [item["doc_id"] for item in case_hits[: args.top_k]]
     case_docs = fetch_case_docs(client, args.case_index, top_doc_ids)

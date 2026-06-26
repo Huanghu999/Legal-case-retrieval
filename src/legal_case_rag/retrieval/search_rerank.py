@@ -547,6 +547,7 @@ def rerank_case_hits(
     max_retries: int = DEFAULT_RERANK_MAX_RETRIES,
     rank_safe: bool = DEFAULT_RERANK_RANK_SAFE,
     max_rank_promotion: int = DEFAULT_RERANK_MAX_RANK_PROMOTION,
+    guardrail_query: str | None = None,
 ) -> list[dict[str, Any]]:
     if not case_hits:
         return []
@@ -600,7 +601,7 @@ def rerank_case_hits(
             + bounded_model_weight * model_norm[index]
         )
         structure_adjustment = rerank_structure_adjustment(item)
-        guardrail = rerank_guardrail_adjustment(query, item)
+        guardrail = rerank_guardrail_adjustment(guardrail_query or query, item)
         guardrail_adjustment = float(guardrail["bonus"]) - float(guardrail["penalty"])
         fused_score = max(0.0, fused_score + structure_adjustment + guardrail_adjustment)
         updated = dict(item)

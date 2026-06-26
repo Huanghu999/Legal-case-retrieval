@@ -332,14 +332,26 @@ def build_rewrite_statute_query(profile: QueryProfile, rewrite: LlmQueryRewrite 
     )
 
 
-def build_rerank_query(profile: QueryProfile) -> str:
+def build_rerank_query(profile: QueryProfile, rewrite: LlmQueryRewrite | None = None) -> str:
+    rewrite_parts: list[str] = []
+    if rewrite and rewrite.used:
+        rewrite_parts = [
+            label + value
+            for label, value in [
+                ("LLM核心争点：", rewrite.legal_issue),
+                ("LLM事实要素：", rewrite.fact_elements),
+                ("LLM法条：", rewrite.statutes),
+            ]
+            if value
+        ]
     return join_query_parts(
         [
             profile.raw_query,
-            "争议焦点：" + "；".join(profile.dispute_focus),
-            "请求类型：" + "、".join(profile.request_types),
-            "否定事实：" + "；".join(profile.negative_facts),
-            "法律关系：" + "、".join(profile.legal_relations + profile.core_reasons),
+            "规则争议焦点：" + "；".join(profile.dispute_focus),
+            "规则请求类型：" + "、".join(profile.request_types),
+            "规则否定事实：" + "；".join(profile.negative_facts),
+            "规则法律关系：" + "、".join(profile.legal_relations + profile.core_reasons),
+            *rewrite_parts,
         ],
         profile.raw_query,
     )

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from src.legal_case_rag.retrieval.llm_query_rewriter import (
     LlmQueryRewrite,
+    build_rewrite_messages,
     parse_rewrite_response,
     rewrite_query_with_llm,
 )
@@ -82,3 +83,14 @@ def test_rewrite_query_with_llm_reads_openai_compatible_response():
 
     assert rewrite.used is True
     assert rewrite.expanded_query == "事实买卖合同成立"
+
+
+def test_build_rewrite_messages_include_field_aligned_few_shots():
+    messages = build_rewrite_messages("没有书面合同但有微信对账，能否认定买卖合同成立？")
+    prompt_text = "\n".join(message["content"] for message in messages)
+
+    assert "示例1" in prompt_text
+    assert "示例2" in prompt_text
+    assert "事实买卖合同成立" in prompt_text
+    assert "focus_labels" in prompt_text
+    assert "不要回答法律问题" in prompt_text

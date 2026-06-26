@@ -121,10 +121,23 @@ def build_rewrite_messages(query: str) -> list[dict[str, str]]:
                 "statutes=corpus.引用法条，只填 query 明确出现的法条；"
                 "main_leaf=queries.主叶子 或 corpus.细争点.主叶子，不确定则空；"
                 "focus_labels=corpus.争议焦点.焦点标签。"
+                "字段边界：fact_elements 只写客观事实，如付款、交付、发票、对账、质量、通知；"
+                "legal_issue 只写法律争点，如合同是否成立、主体是否适格、责任是否承担、金额如何认定；"
+                "expanded_query 必须是空格分隔的检索短语，不要写完整句子。"
                 "不要回答法律问题，不判断胜败，不生成结论。"
                 "不要虚构案号、法院、当事人、金额、日期。"
                 "只从用户 query 抽取事实，并补充通用法律检索术语。"
                 "每个字符串字段不超过120个汉字；不确定字段留空，不要硬猜。"
+                "示例1：用户 query=没有书面合同，但有微信对账和发票抵扣，能否认定买卖合同成立？"
+                '输出={"expanded_query":"无书面合同 微信对账 增值税专用发票认证抵扣 送货交付 事实买卖合同成立 货款给付",'
+                '"legal_issue":"无书面合同情况下根据微信对账、发票抵扣、送货交付等履行行为认定事实买卖合同成立",'
+                '"fact_elements":"未签书面合同 微信对账 发票认证抵扣 送货交付",'
+                '"statutes":"","main_leaf":"A1_口头或事实买卖合同成立认定","focus_labels":["合同成立与否","货款给付"]}。'
+                "示例2：用户 query=承租人拖欠租金，出租人解除合同后押金能不能抵扣租金和违约金？"
+                '输出={"expanded_query":"房屋租赁合同解除 拖欠租金 押金抵扣 违约金 租赁保证金返还",'
+                '"legal_issue":"租赁合同解除后押金能否用于抵扣欠付租金、违约金及损失",'
+                '"fact_elements":"承租人拖欠租金 出租人解除合同 合同约定押金 押金返还争议",'
+                '"statutes":"","main_leaf":"","focus_labels":["押金返还","合同解除","违约责任"]}。'
                 '输出格式：{"expanded_query":"","legal_issue":"","fact_elements":"","statutes":"","main_leaf":"","focus_labels":[]}'
             ),
         },
