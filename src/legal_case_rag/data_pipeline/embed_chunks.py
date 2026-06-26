@@ -134,6 +134,10 @@ def embed_with_retries(args: argparse.Namespace, api_key: str, inputs: list[str]
 
 
 def main() -> int:
+    import sys
+    _root = str(Path(__file__).resolve().parents[3])
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
     from src.legal_case_rag.runtime.env import load_project_env
     load_project_env()
 
