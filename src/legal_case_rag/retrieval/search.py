@@ -132,7 +132,7 @@ def run_search(args: argparse.Namespace) -> dict[str, Any]:
         k=60,
     )
     if args.rerank:
-        rerank_query = build_rerank_query(profile, rewrite if rewrite.used else None) if query_profile_enabled else args.query
+        rerank_query = args.query
         guardrail_query = build_rerank_query(profile) if query_profile_enabled else args.query
         attach_case_key_chunks(
             client=client,
