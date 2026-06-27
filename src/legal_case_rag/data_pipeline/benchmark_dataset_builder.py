@@ -54,11 +54,8 @@ PLEADING_MARKER_RE = re.compile(
     r"(?:被告|被上诉人|被申请人|第三人|反诉被告)[^。；\n\r]{0,30}(?:辩称|述称|答辩称))"
 )
 DEFENSE_MARKER_RE = re.compile(r"^(?:被告|被上诉人|被申请人|第三人|反诉被告)[^。；\n\r]{0,30}(?:辩称|述称|答辩称)")
-REASONING_BOUNDARY_RE = re.compile(r"(?=(?:本案争议焦点为|综上所述|依照))")
+REASONING_BOUNDARY_RE = re.compile(r"(?=(?:本案争议焦点为|本院认为|首先|其次|再次|最后|关于|对于|故|综上))")
 FACT_DATE_BOUNDARY_RE = re.compile(r"(?=(?:19|20)\d{2}年\d{1,2}月\d{1,2}日)")
-
-MIN_CHUNK_CHARS = 50
-KEEP_SMALL_SECTIONS = {"case_profile", "fine_issue", "focus", "statutes"}
 
 
 @dataclass
@@ -369,14 +366,10 @@ def split_section_text(section_type: str, text: str, max_chars: int, overlap: in
     if section_type == "facts":
         return pack_units(split_marker_units(text, FACT_DATE_BOUNDARY_RE), max_chars, overlap)
     if section_type == "reasoning":
-        units = merge_short_leading_units(
-            split_marker_units(text, REASONING_BOUNDARY_RE),
-            min_chars=80,
-        )
-        return pack_units(units, max_chars, overlap)
-    if section_type in {"claims", "defense"}:
-        units = merge_short_leading_units(text.split("\n"), min_chars=60)
-        return pack_units(units, max_chars, overlap)
+        chunks: list[str] = []
+        for unit in merge_short_leading_units(split_marker_units(text, REASONING_BOUNDARY_RE)):
+            chunks.extend(split_text(unit, max_chars, overlap) if len(unit) > max_chars else [unit])
+        return chunks
     return split_text(text, max_chars, overlap)
 
 
@@ -432,10 +425,8 @@ def line_number_at(text: str, position: int) -> int:
 def chunk_size_for_section(section_type: str) -> tuple[int, int]:
     if section_type in {"claims", "defense"}:
         return 760, 0
-    if section_type == "facts":
+    if section_type in {"facts", "reasoning"}:
         return 900, 120
-    if section_type == "reasoning":
-        return 1400, 160
     return 1600, 0
 
 
@@ -490,11 +481,6 @@ def build_chunks(row: dict[str, Any], case_doc: dict[str, Any], embedding_model:
             chunks.append(chunk)
             chunk_index_in_case += 1
         section_index += 1
-    # 过滤微小 chunk（天然短章节除外）
-    chunks = [
-        chunk for chunk in chunks
-        if chunk["section_type"] in KEEP_SMALL_SECTIONS or chunk["chunk_char_len"] >= MIN_CHUNK_CHARS
-    ]
     for index, chunk in enumerate(chunks):
         if index > 0:
             chunk["prev_chunk_id"] = chunks[index - 1]["chunk_id"]
