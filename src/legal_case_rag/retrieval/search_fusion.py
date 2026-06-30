@@ -11,7 +11,7 @@ from .query_profile import QueryProfile, profile_match_bonus
 def reciprocal_rank_fusion(
     ranked_lists: dict[str, list[ChunkHit]],
     weights: dict[str, float] | None = None,
-    k: int = 60,
+    k: int = 10,
 ) -> list[ChunkHit]:
     weights = weights or {}
     fused: dict[str, ChunkHit] = {}
@@ -106,7 +106,7 @@ def route_case_ranking(
         doc_hits.sort(key=lambda item: item.score, reverse=True)
         top_hits = doc_hits[:top_chunks_per_case]
         key_hits = [hit for hit in doc_hits if hit.section_type in KEY_SECTION_TYPES]
-        top_key_hits = [hit for hit in top_hits if hit.section_type in {"fine_issue", "focus"}]
+        top_key_hits = [hit for hit in top_hits if hit.section_type in {"fine_tags", "fine_rule", "focus_tags", "focus_analysis"}]
         weighted_scores = [hit.score * section_weight(hit) for hit in top_hits]
         best_score = max(weighted_scores) if weighted_scores else 0.0
         section_bonus = min(0.20, 0.05 * len({hit.section_type for hit in key_hits}))
@@ -143,7 +143,7 @@ def case_level_reciprocal_rank_fusion(
     ranked_lists: dict[str, list[ChunkHit]],
     weights: dict[str, float] | None = None,
     top_chunks_per_case: int = 3,
-    k: int = 60,
+    k: int = 10,
 ) -> list[dict[str, Any]]:
     weights = weights or {}
     fused: dict[str, dict[str, Any]] = {}
@@ -185,7 +185,7 @@ def case_level_reciprocal_rank_fusion(
         hit_sections = {hit.section_type for hit in all_chunks if hit.section_type}
         key_sections = hit_sections & KEY_SECTION_TYPES
         key_section_bonus = min(0.18, 0.055 * len(key_sections))
-        fine_focus_bonus = min(0.10, 0.05 * len(hit_sections & {"fine_issue", "focus"}))
+        fine_focus_bonus = min(0.10, 0.05 * len(hit_sections & {"fine_tags", "fine_rule", "focus_tags", "focus_analysis"}))
         dual_channel_bonus = 0.05 if {"bm25", "vector"} <= entry["_route_types"] else 0.0
         route_coverage_bonus = min(0.10, 0.015 * max(0, len(entry["_route_names"]) - 1))
         multi_chunk_bonus = min(0.035, 0.006 * max(0, len(all_chunks) - 1))
@@ -265,7 +265,7 @@ def aggregate_case_hits(
         max_score = max(weighted_scores) if weighted_scores else 0.0
         sum_score = sum(weighted_scores[:3])
         key_section_bonus = min(0.18, 0.055 * len(key_section_hits))
-        top_key_bonus = min(0.08, 0.04 * len(top_sections & {"fine_issue", "focus"}))
+        top_key_bonus = min(0.08, 0.04 * len(top_sections & {"fine_tags", "fine_rule", "focus_tags", "focus_analysis"}))
         multi_chunk_bonus = min(0.08, 0.018 * max(0, len(hits) - 1))
         route_coverage_bonus = min(0.12, 0.018 * max(0, len(all_sources) - 1))
         dual_source_bonus = min(

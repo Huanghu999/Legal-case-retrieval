@@ -372,8 +372,10 @@ def build_query_routes(profile: QueryProfile, rewrite: LlmQueryRewrite | None = 
     if section_query:
         routes.extend(
             [
-                QueryRoute("bm25_fine_issue", section_query, "bm25", 1.20, "fine_issue"),
-                QueryRoute("bm25_focus_section", section_query, "bm25", 1.60, "focus"),
+                QueryRoute("bm25_fine_tags", section_query, "bm25", 1.20, "fine_tags"),
+                QueryRoute("bm25_fine_rule", section_query, "bm25", 1.30, "fine_rule"),
+                QueryRoute("bm25_focus_tags", section_query, "bm25", 1.60, "focus_tags"),
+                QueryRoute("bm25_focus_analysis", section_query, "bm25", 1.10, "focus_analysis"),
                 QueryRoute("bm25_reasoning", section_query, "bm25", 1.10, "reasoning"),
                 QueryRoute(
                     "bm25_facts",
@@ -419,14 +421,16 @@ def profile_match_bonus(
     text = compact_text(chunk_text)
     bonus = 0.0
 
-    if section_type in {"reasoning", "facts"}:
+    if section_type in {"fine_tags", "focus_tags"}:
+        bonus += 0.03
+    elif section_type in {"fine_rule", "focus_analysis"}:
+        bonus += 0.02
+    elif section_type in {"reasoning", "facts"}:
         bonus += 0.04
     elif section_type in {"defense", "judgment"}:
         bonus += 0.03
     elif section_type in {"header", "statutes"}:
         bonus -= 0.03
-    elif section_type == "case_profile":
-        bonus -= 0.01
 
     if profile.core_reasons and any(item == reason or item in text for item in profile.core_reasons):
         bonus += 0.08

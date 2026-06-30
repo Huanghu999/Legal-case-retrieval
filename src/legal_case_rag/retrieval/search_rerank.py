@@ -358,9 +358,9 @@ def rerank_structure_adjustment(case_hit: dict[str, Any]) -> float:
     weak_only_sections = sections and not legal_sections and sections <= {"facts", "claims", "defense"}
 
     adjustment = min(0.06, 0.025 * len(legal_sections))
-    if {"fine_issue", "focus"} <= sections:
+    if {"fine_tags", "fine_rule", "focus_tags", "focus_analysis"} <= sections:
         adjustment += 0.02
-    if "reasoning" in sections and (sections & {"fine_issue", "focus"}):
+    if "reasoning" in sections and (sections & {"fine_tags", "fine_rule", "focus_tags", "focus_analysis"}):
         adjustment += 0.02
     if weak_only_sections:
         adjustment -= 0.08

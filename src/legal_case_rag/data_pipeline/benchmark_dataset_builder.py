@@ -25,9 +25,10 @@ DEFAULT_EMBEDDING_DIM = 1024
 
 
 SECTION_TITLES = {
-    "case_profile": "案件画像",
-    "fine_issue": "细争点",
-    "focus": "争议焦点",
+    "fine_tags": "细争点标签",
+    "fine_rule": "裁判规则",
+    "focus_tags": "焦点标签",
+    "focus_analysis": "焦点评析",
     "claims": "诉称",
     "defense": "辩称",
     "facts": "查明事实",
@@ -37,13 +38,14 @@ SECTION_TITLES = {
 }
 
 SECTION_WEIGHTS = {
-    "fine_issue": 1.55,
-    "focus": 1.45,
+    "fine_tags": 1.60,
+    "fine_rule": 1.55,
+    "focus_tags": 1.50,
+    "focus_analysis": 1.45,
     "reasoning": 1.20,
     "facts": 1.0,
     "claims": 0.70,
     "judgment": 0.75,
-    "case_profile": 1.20,
     "statutes": 0.45,
     "defense": 0.85,
 }
@@ -240,36 +242,34 @@ def build_sections(row: dict[str, Any], case_doc: dict[str, Any]) -> list[tuple[
     analysis = focus.get("焦点评析") or {}
     fine = row.get("细争点") or {}
     paragraphs = row.get("段落") or {}
-    profile = "\n".join(
-        [
-            f"案由：{case_doc['reason']}",
-            f"审级：{case_doc['trial_level']}",
-            f"法院：{case_doc['court_name']}",
-            f"法律关系：{row.get('法律关系') or ''}",
-            f"标的物类型：{row.get('标的物类型') or ''}",
-            f"裁判结果标签：{row.get('裁判结果_标签') or ''}",
-        ]
-    )
-    fine_issue = "\n".join(
+
+    # 标签类：纯分类标签，独立做精确匹配
+    fine_tags = "\n".join(
         [
             f"主叶子：{fine.get('主叶子') or ''}",
             f"细争点：{as_text(fine.get('细争点'))}",
-            f"裁判规则争点：{fine.get('裁判规则争点') or ''}",
         ]
     )
-    focus_text = "\n".join(
+    focus_tags = f"焦点标签：{as_text(focus.get('焦点标签'))}"
+
+    # 自然语言类：裁判规则描述
+    fine_rule = f"裁判规则争点：{fine.get('裁判规则争点') or ''}"
+
+    # 自然语言类：焦点评析（案情核心+法律争点+裁判要旨）
+    focus_analysis = "\n".join(
         [
-            f"焦点标签：{as_text(focus.get('焦点标签'))}",
             f"案情核心：{analysis.get('案情核心') or ''}",
             f"法律争点：{analysis.get('法律争点') or ''}",
             f"裁判要旨：{analysis.get('裁判要旨') or ''}",
             f"焦点原文：{focus.get('焦点原文') or ''}",
         ]
     )
+
     sections = [
-        ("case_profile", profile),
-        ("fine_issue", fine_issue),
-        ("focus", focus_text),
+        ("fine_tags", fine_tags),
+        ("fine_rule", fine_rule),
+        ("focus_tags", focus_tags),
+        ("focus_analysis", focus_analysis),
     ]
     sections.extend(split_pleadings_sections(paragraphs.get("诉称") or ""))
     sections.extend(
@@ -373,12 +373,26 @@ def split_section_text(section_type: str, text: str, max_chars: int, overlap: in
     return split_text(text, max_chars, overlap)
 
 
-def make_embedding_text(case_doc: dict[str, Any], section_title: str, chunk_text: str, core_issue: str = "") -> str:
+def make_embedding_text(
+    case_doc: dict[str, Any],
+    section_title: str,
+    chunk_text: str,
+    core_issue: str = "",
+    legal_relation: str = "",
+    subject_type: str = "",
+    result_label: str = "",
+) -> str:
     parts = [
         f"案由：{case_doc['reason']}",
         f"审级：{case_doc['trial_level']}",
         f"法院：{case_doc['court_name']}",
     ]
+    if legal_relation:
+        parts.append(f"法律关系：{legal_relation}")
+    if subject_type:
+        parts.append(f"标的物：{subject_type}")
+    if result_label:
+        parts.append(f"裁判结果：{result_label}")
     if core_issue:
         parts.append(f"核心争点：{core_issue}")
     parts.extend(
@@ -423,6 +437,8 @@ def line_number_at(text: str, position: int) -> int:
 
 
 def chunk_size_for_section(section_type: str) -> tuple[int, int]:
+    if section_type in {"fine_tags", "fine_rule", "focus_tags"}:
+        return 1600, 0  # 短文本，不会触发切分
     if section_type in {"claims", "defense"}:
         return 760, 0
     if section_type in {"facts", "reasoning"}:
@@ -436,6 +452,9 @@ def build_chunks(row: dict[str, Any], case_doc: dict[str, Any], embedding_model:
     chunk_index_in_case = 0
     core_issue = core_issue_text(row)
     full_text = case_doc.get("full_text", "")
+    legal_relation = row.get("法律关系") or ""
+    subject_type = row.get("标的物类型") or ""
+    result_label = row.get("裁判结果_标签") or ""
     search_start = 0
     for section_type, section_text in build_sections(row, case_doc):
         max_chars, overlap = chunk_size_for_section(section_type)
@@ -446,7 +465,10 @@ def build_chunks(row: dict[str, Any], case_doc: dict[str, Any], embedding_model:
                 "chunk_id": chunk_id,
                 "doc_id": case_doc["doc_id"],
                 "chunk_text": chunk_text,
-                "embedding_text": make_embedding_text(case_doc, SECTION_TITLES[section_type], chunk_text, core_issue),
+                "embedding_text": make_embedding_text(
+                    case_doc, SECTION_TITLES[section_type], chunk_text, core_issue,
+                    legal_relation, subject_type, result_label,
+                ),
                 "section_type": section_type,
                 "section_title": SECTION_TITLES[section_type],
                 "section_index": section_index,

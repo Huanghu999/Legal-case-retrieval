@@ -43,7 +43,7 @@ def test_llm_rewrite_replaces_section_queries_with_aligned_fields():
     assert routes["vector_raw"].query == profile.raw_query
     assert routes["bm25_focus"].query == rewrite.expanded_query
     assert routes["vector_focus"].query == rewrite.expanded_query
-    assert "A1_口头或事实买卖合同成立认定" in routes["bm25_fine_issue"].query
+    assert "A1_口头或事实买卖合同成立认定" in routes["bm25_fine_tags"].query
     assert "合同成立与否" in routes["bm25_reasoning"].query
     assert routes["bm25_facts"].query == rewrite.fact_elements
     assert "合同法第八条" in routes["bm25_legal"].query

@@ -21,9 +21,10 @@ DEFAULT_RERANK_MODEL = "BAAI/bge-reranker-v2-m3"
 DEFAULT_RERANK_URL = "https://api.siliconflow.cn/v1/rerank"
 
 SECTION_WEIGHTS = {
-    "fine_issue": 1.55,
-    "focus": 1.45,
-    "case_profile": 1.20,
+    "fine_tags": 1.60,
+    "fine_rule": 1.55,
+    "focus_tags": 1.50,
+    "focus_analysis": 1.45,
     "reasoning": 1.20,
     "facts": 1.00,
     "claims": 0.70,
@@ -33,27 +34,29 @@ SECTION_WEIGHTS = {
     "statutes": 0.45,
 }
 
-KEY_SECTION_TYPES = {"fine_issue", "focus", "reasoning", "facts", "defense"}
+KEY_SECTION_TYPES = {"fine_tags", "fine_rule", "focus_tags", "focus_analysis", "reasoning", "facts", "defense"}
 
-LEGAL_RERANK_SECTION_TYPES = {"fine_issue", "focus", "reasoning"}
+LEGAL_RERANK_SECTION_TYPES = {"fine_tags", "fine_rule", "focus_tags", "focus_analysis", "reasoning"}
 
-CASE_KEY_SECTION_TYPES = {"case_profile", "fine_issue", "focus", "reasoning", "facts"}
+CASE_KEY_SECTION_TYPES = {"fine_tags", "fine_rule", "focus_tags", "focus_analysis", "reasoning", "facts"}
 
 CASE_RERANK_SECTION_ORDER = [
-    "fine_issue",
-    "focus",
+    "fine_tags",
+    "fine_rule",
+    "focus_tags",
+    "focus_analysis",
     "reasoning",
     "facts",
-    "case_profile",
     "claims",
     "judgment",
 ]
 
 CASE_RERANK_SECTION_BUDGETS = {
-    "fine_issue": 700,
-    "focus": 700,
+    "fine_tags": 300,
+    "fine_rule": 500,
+    "focus_tags": 300,
+    "focus_analysis": 700,
     "reasoning": 900,
-    "case_profile": 420,
     "facts": 320,
     "judgment": 240,
     "claims": 220,
@@ -61,9 +64,10 @@ CASE_RERANK_SECTION_BUDGETS = {
 }
 
 CASE_RERANK_SECTION_GROUPS = {
-    "case_profile": "【案件画像】",
-    "fine_issue": "【核心争议】",
-    "focus": "【核心争议】",
+    "fine_tags": "【核心争议】",
+    "fine_rule": "【核心争议】",
+    "focus_tags": "【核心争议】",
+    "focus_analysis": "【核心争议】",
     "reasoning": "【裁判规则】",
     "facts": "【关键事实】",
     "judgment": "【裁判结果】",

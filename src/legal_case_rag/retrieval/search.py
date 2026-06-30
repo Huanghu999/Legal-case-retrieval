@@ -129,7 +129,7 @@ def run_search(args: argparse.Namespace) -> dict[str, Any]:
         ranked_lists,
         weights=route_weights,
         top_chunks_per_case=args.chunk_top_k,
-        k=60,
+        k=10,
     )
     if args.rerank:
         rerank_query = args.query
