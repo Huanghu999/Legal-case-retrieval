@@ -307,29 +307,23 @@ def build_legal_query(profile: QueryProfile) -> str:
 
 
 def build_rewrite_legal_query(profile: QueryProfile, rewrite: LlmQueryRewrite | None) -> str:
+    """向后兼容：无 rewrite 时返回空，有 rewrite 时返回 focus_analysis_query 作为兜底。"""
     if not rewrite or not rewrite.used:
         return ""
-    return join_query_parts(
-        [
-            rewrite.legal_issue,
-            rewrite.main_leaf,
-            " ".join(rewrite.focus_labels),
-        ],
-        "",
-    )
+    return rewrite.focus_analysis_query or ""
 
 
-def build_rewrite_statute_query(profile: QueryProfile, rewrite: LlmQueryRewrite | None) -> str:
+def get_section_query(profile: QueryProfile, rewrite: LlmQueryRewrite | None, section_type: str, fallback: str) -> str:
+    """根据 section_type 返回对应的 rewrite 查询文本，无 rewrite 或无对应字段时回退到 fallback。"""
     if not rewrite or not rewrite.used:
-        return ""
-    return join_query_parts(
-        [
-            rewrite.legal_issue,
-            rewrite.statutes,
-            rewrite.main_leaf,
-        ],
-        "",
-    )
+        return fallback
+    mapping = {
+        "focus_tags": rewrite.focus_tags_query,
+        "fine_tags": rewrite.fine_tags_query,
+        "fine_rule": rewrite.fine_rule_query,
+        "focus_analysis": rewrite.focus_analysis_query,
+    }
+    return mapping.get(section_type, "") or fallback
 
 
 def build_rerank_query(profile: QueryProfile, rewrite: LlmQueryRewrite | None = None) -> str:
@@ -338,9 +332,9 @@ def build_rerank_query(profile: QueryProfile, rewrite: LlmQueryRewrite | None = 
         rewrite_parts = [
             label + value
             for label, value in [
-                ("LLM核心争点：", rewrite.legal_issue),
-                ("LLM事实要素：", rewrite.fact_elements),
-                ("LLM法条：", rewrite.statutes),
+                ("LLM焦点标签：", rewrite.focus_tags_query),
+                ("LLM裁判规则：", rewrite.fine_rule_query),
+                ("LLM焦点评析：", rewrite.focus_analysis_query),
             ]
             if value
         ]
@@ -360,38 +354,23 @@ def build_rerank_query(profile: QueryProfile, rewrite: LlmQueryRewrite | None = 
 def build_query_routes(profile: QueryProfile, rewrite: LlmQueryRewrite | None = None) -> list[QueryRoute]:
     routes = [
         QueryRoute("bm25_raw", profile.raw_query, "bm25", 1.0),
-        QueryRoute("vector_raw", profile.raw_query, "vector", 0.8),
     ]
     focus_query = build_focus_query(profile)
     expanded_query = rewrite.expanded_query if rewrite and rewrite.used and rewrite.expanded_query else focus_query
     if expanded_query and expanded_query != profile.raw_query:
         routes.append(QueryRoute("bm25_focus", expanded_query, "bm25", 0.95))
         routes.append(QueryRoute("vector_focus", expanded_query, "vector", 1.20))
-    legal_section_query = build_rewrite_legal_query(profile, rewrite)
-    section_query = legal_section_query or focus_query or profile.raw_query
-    if section_query:
-        routes.extend(
-            [
-                QueryRoute("bm25_fine_tags", section_query, "bm25", 1.20, "fine_tags"),
-                QueryRoute("bm25_fine_rule", section_query, "bm25", 1.30, "fine_rule"),
-                QueryRoute("bm25_focus_tags", section_query, "bm25", 1.60, "focus_tags"),
-                QueryRoute("bm25_focus_analysis", section_query, "bm25", 1.10, "focus_analysis"),
-                QueryRoute("bm25_reasoning", section_query, "bm25", 1.10, "reasoning"),
-                QueryRoute(
-                    "bm25_facts",
-                    rewrite.fact_elements if rewrite and rewrite.used and rewrite.fact_elements else section_query,
-                    "bm25",
-                    0.60,
-                    "facts",
-                ),
-            ]
-        )
-    negative_query = build_negative_query(profile)
-    if negative_query:
-        routes.append(QueryRoute("bm25_negative", negative_query, "bm25", 1.20))
-    legal_query = build_rewrite_statute_query(profile, rewrite) or build_legal_query(profile)
-    if legal_query:
-        routes.append(QueryRoute("bm25_legal", legal_query, "bm25", 0.80))
+    fallback_query = focus_query or profile.raw_query
+    section_defs = [
+        ("bm25_fine_rule",      1.30, "fine_rule"),
+        ("bm25_focus_tags",     1.60, "focus_tags"),
+        ("bm25_focus_analysis", 1.80, "focus_analysis"),
+        ("bm25_fine_tags",      2.00, "fine_tags"),
+    ]
+    for name, weight, section_type in section_defs:
+        sq = get_section_query(profile, rewrite, section_type, fallback_query)
+        if sq:
+            routes.append(QueryRoute(name, sq, "bm25", weight, section_type))
     return routes
 
 

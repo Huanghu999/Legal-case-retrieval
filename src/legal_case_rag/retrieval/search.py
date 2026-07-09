@@ -67,7 +67,7 @@ def run_search(args: argparse.Namespace) -> dict[str, Any]:
         routes = [
             route
             for route in build_query_routes(profile)
-            if route.name in {"bm25_raw", "vector_raw"}
+            if route.name in {"bm25_raw"}
         ]
 
     ranked_lists: dict[str, list[ChunkHit]] = {}

@@ -22,32 +22,22 @@ REQUIRED_ENV = ["OPENSEARCH_PASSWORD", "SILICONFLOW_API_KEY"]
 
 ROUTE_NAMES = [
     "bm25_raw",
-    "vector_raw",
     "bm25_focus",
     "vector_focus",
-    "bm25_fine_tags",
     "bm25_fine_rule",
     "bm25_focus_tags",
     "bm25_focus_analysis",
-    "bm25_reasoning",
-    "bm25_facts",
-    "bm25_negative",
-    "bm25_legal",
+    "bm25_fine_tags",
 ]
 
 BASE_WEIGHTS = {
     "bm25_raw": 1.0,
-    "vector_raw": 0.80,
     "bm25_focus": 0.95,
     "vector_focus": 1.20,
-    "bm25_fine_tags": 1.20,
     "bm25_fine_rule": 1.30,
     "bm25_focus_tags": 1.60,
-    "bm25_focus_analysis": 1.10,
-    "bm25_reasoning": 1.10,
-    "bm25_facts": 0.60,
-    "bm25_negative": 1.20,
-    "bm25_legal": 0.80,
+    "bm25_focus_analysis": 1.80,
+    "bm25_fine_tags": 2.00,
 }
 
 CSV_FIELDS = [
@@ -141,41 +131,35 @@ def merged_weights(name: str, updates: dict[str, float]) -> dict[str, Any]:
 def generate_weight_sets() -> list[dict[str, Any]]:
     presets = [
         merged_weights("baseline", {}),
-        merged_weights("issue_strong", {"bm25_fine_tags": 1.60, "bm25_focus_tags": 1.50, "bm25_facts": 0.70}),
-        merged_weights("issue_extreme", {"bm25_fine_tags": 1.80, "bm25_focus_tags": 1.70, "bm25_facts": 0.50}),
-        merged_weights("facts_down", {"bm25_facts": 0.50, "bm25_reasoning": 1.20}),
-        merged_weights("vector_up", {"vector_raw": 1.20, "vector_focus": 1.30}),
-        merged_weights("bm25_up", {"bm25_raw": 1.20, "bm25_focus": 1.10, "bm25_fine_tags": 1.60}),
-        merged_weights("negative_up", {"bm25_negative": 1.40, "bm25_facts": 0.70}),
-        merged_weights("reasoning_up", {"bm25_reasoning": 1.30, "bm25_focus_tags": 1.50}),
+        merged_weights("focus_strong", {"bm25_focus_tags": 1.80, "bm25_fine_rule": 1.50}),
+        merged_weights("vector_up", {"vector_focus": 1.50}),
+        merged_weights("bm25_up", {"bm25_raw": 1.20, "bm25_focus": 1.10}),
+        merged_weights("analysis_strong", {"bm25_focus_analysis": 1.70, "bm25_fine_tags": 1.80}),
     ]
 
-    fine_tags_values = [1.2, 1.4, 1.6, 1.8]
+    fine_rule_values = [1.0, 1.3, 1.6, 1.8]
     focus_tags_values = [1.2, 1.4, 1.6, 1.8]
-    facts_values = [0.4, 0.6, 0.8, 1.0]
-    vector_raw_values = [0.8, 1.0, 1.2]
-    vector_focus_values = [0.9, 1.2]
+    focus_analysis_values = [1.0, 1.3, 1.6]
+    fine_tags_values = [1.2, 1.6, 1.8]
+    vector_focus_values = [0.9, 1.2, 1.5]
 
     grid: list[dict[str, Any]] = []
-    for fine_tags, focus_tags, facts, vector_raw, vector_focus in product(
-        fine_tags_values,
+    for fine_rule, focus_tags, focus_analysis, fine_tags, vector_focus in product(
+        fine_rule_values,
         focus_tags_values,
-        facts_values,
-        vector_raw_values,
+        focus_analysis_values,
+        fine_tags_values,
         vector_focus_values,
     ):
         grid.append(
             merged_weights(
                 "grid",
                 {
-                    "bm25_fine_tags": fine_tags,
+                    "bm25_fine_rule": fine_rule,
                     "bm25_focus_tags": focus_tags,
-                    "bm25_facts": facts,
-                    "vector_raw": vector_raw,
+                    "bm25_focus_analysis": focus_analysis,
+                    "bm25_fine_tags": fine_tags,
                     "vector_focus": vector_focus,
-                    "bm25_reasoning": 1.10,
-                    "bm25_negative": 1.20,
-                    "bm25_legal": 0.80,
                 },
             )
         )
